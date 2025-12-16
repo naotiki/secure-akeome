@@ -12,4 +12,4 @@ export const POSTCARD_LINES_PER_PAGE = Math.max(20, Math.floor(BASE_POSTCARD_LIN
 export const CHECKSUM_BLOCKS_PER_PAGE = 30;
 
 // QR (bottom-right) for checksums.
-export const CHECKSUM_QR_SIZE_PX = 300;
+export const CHECKSUM_QR_SIZE_PX = 500;

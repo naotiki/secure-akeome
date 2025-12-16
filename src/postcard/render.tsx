@@ -78,9 +78,6 @@ function Template(props: PostcardRenderParams) {
       {/* Row 1: PGP message (80%) + checksums (20%) */}
       <div style={{ display: 'flex', flexDirection: 'row', flex: 1, gap: 14, minHeight: 0 }}>
         <div style={{ display: 'flex', flexDirection: 'column', flexGrow: 4, flexBasis: 0, minWidth: 0, gap: 8 }}>
-          <div style={{ display: 'flex', gap: 6, fontSize: px(12), color: '#64748b' }}>
-            <span>PGP MESSAGE (ASCII armored)</span>
-          </div>
           <div
             style={{
               flex: 1,
@@ -105,51 +102,6 @@ function Template(props: PostcardRenderParams) {
           </div>
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', flexGrow: 1, flexBasis: 0, minWidth: 0, gap: 8 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div style={{ display: 'flex', gap: 6, fontSize: px(12), color: '#0f172a' }}>
-              <span>CHECKSUM</span>
-            </div>
-            <div style={{ display: 'flex', gap: 6, fontSize: px(10), color: '#64748b' }}>
-              <span>
-                {start + 1}..{Math.min(end, props.checksums.length)}
-              </span>
-              <span>/</span>
-              <span>{props.checksums.length}</span>
-            </div>
-          </div>
-          <div
-            style={{
-              flex: 1,
-              border: '1px solid #e2e8f0',
-              borderRadius: 16,
-              padding: 12,
-              boxSizing: 'border-box',
-              backgroundColor: '#ffffff',
-              minHeight: 0,
-              display: 'flex',
-              flexDirection: 'column',
-            }}
-          >
-            <pre
-              style={{
-                margin: 0,
-                fontFamily: 'JetBrains Mono',
-                fontSize: px(10),
-                lineHeight: 1.05,
-                color: '#334155',
-                whiteSpace: 'pre-wrap',
-              }}
-            >
-              {checksumText}
-            </pre>
-            {remaining > 0 && (
-              <div style={{ display: 'flex', gap: 6, fontSize: px(10), color: '#64748b', marginTop: 6 }}>
-                <span>次ページに続きます</span>
-              </div>
-            )}
-          </div>
-        </div>
       </div>
 
       {/* Row 2: FROM/TO + page num + QR */}
@@ -167,7 +119,7 @@ function Template(props: PostcardRenderParams) {
         }}
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, flex: 1, minWidth: 0 }}>
-          <div style={{ display: 'flex', flexDirection: 'row', gap: 18, fontSize: px(12), color: '#0f172a' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: px(12), color: '#0f172a' }}>
             <div style={{ display: 'flex', gap: 6, minWidth: 0 }}>
               <span style={{ color: '#64748b' }}>FROM:</span>
               <span style={{ color: '#0284c7' }}>{formatFingerprint(props.senderFingerprint)}</span>
@@ -177,26 +129,23 @@ function Template(props: PostcardRenderParams) {
               <span style={{ color: '#0284c7' }}>{formatFingerprint(props.recipientFingerprint)}</span>
             </div>
           </div>
-          <div
-            style={{
-              display: 'flex',
-              gap: 6,
-              fontSize: px(12),
-              color: '#0f172a',
-              backgroundColor: '#e0f2fe',
-              padding: '6px 10px',
-              borderRadius: 999,
-              border: '1px solid #bae6fd',
-              width: 'fit-content',
-            }}
-          >
-            <span>PAGE</span>
-            <span>
-              {props.pageIndex} / {props.pageCount}
-            </span>
-          </div>
         </div>
-
+        <div
+          style={{
+            display: 'flex',
+            gap: 6,
+            fontSize: px(10),
+            color: '#0f172a',
+            backgroundColor: '#e0f2fe',
+            padding: '6px 10px',
+            borderRadius: 999,
+            border: '1px solid #bae6fd',
+          }}
+        >
+          <span>
+            PAGE {props.pageIndex} / {props.pageCount}
+          </span>
+        </div>
         {props.checksumQrDataUrl ? (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
             <div style={{ display: 'flex', gap: 6, fontSize: px(10), color: '#64748b' }}>
@@ -204,11 +153,11 @@ function Template(props: PostcardRenderParams) {
             </div>
             <img
               src={props.checksumQrDataUrl}
-              width={CHECKSUM_QR_SIZE_PX}
-              height={CHECKSUM_QR_SIZE_PX}
+              width={300}
+              height={300}
               style={{
-                width: CHECKSUM_QR_SIZE_PX,
-                height: CHECKSUM_QR_SIZE_PX,
+                width: "150px",
+                height: "150px",
                 borderRadius: 8,
                 border: '1px solid #e2e8f0',
                 backgroundColor: '#ffffff',
