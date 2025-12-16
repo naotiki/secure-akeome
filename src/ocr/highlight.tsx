@@ -63,8 +63,11 @@ export function HighlightedArmoredText(props: {
           const chunk = text.slice(start, end);
           const isMismatch = mismatchIndices.has(b.index);
           const segments = segmentAmbiguous(chunk);
+          const blockClass = isMismatch
+            ? 'bg-red-100/80 outline outline-1 outline-red-200 outline-offset-[-1px]'
+            : 'bg-emerald-100/70 outline outline-1 outline-emerald-200 outline-offset-[-1px]';
           out.push(
-            <span key={`block-${b.index}`} className={isMismatch ? 'bg-red-100/70' : undefined} data-block={b.index}>
+            <span key={`block-${b.index}`} className={`box-decoration-clone rounded-[3px] ${blockClass}`} data-block={b.index}>
               {segments.map((s, idx) =>
                 s.kind === 'ambiguous' ? (
                   <span key={idx} className="bg-yellow-200/80">

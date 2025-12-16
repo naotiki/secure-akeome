@@ -1,7 +1,7 @@
 import satori from 'satori';
 import type { ChecksumBlock } from '@/types';
 import { loadSatoriFonts } from './fonts';
-import { ARMOR_WRAP_COLUMNS, CHECKSUM_BLOCKS_PER_PAGE, CHECKSUM_QR_SIZE_PX, POSTCARD_TEXT_SCALE } from './constants';
+import { ARMOR_WRAP_COLUMNS, CHECKSUM_QR_SIZE_PX, POSTCARD_TEXT_SCALE } from './constants';
 import { checksumQrDataUrl } from './checksum-qr';
 
 export type PostcardRenderParams = {
@@ -22,10 +22,6 @@ function formatFingerprint(fp: string) {
   const compact = fp.replace(/\s+/g, '').toUpperCase();
   if (!compact) return '—';
   return compact.length > 40 ? compact.slice(0, 40) : compact;
-}
-
-function checksumLines(blocks: ChecksumBlock[]) {
-  return blocks.map((b) => `[${b.index}] ${b.checksum}`);
 }
 
 function wrapLine(line: string, columns: number) {
@@ -51,11 +47,6 @@ function patchSvgForPrint(svg: string) {
 
 function Template(props: PostcardRenderParams) {
   const px = (value: number) => Math.round(value * POSTCARD_TEXT_SCALE);
-  const start = (props.pageIndex - 1) * CHECKSUM_BLOCKS_PER_PAGE;
-  const end = start + CHECKSUM_BLOCKS_PER_PAGE;
-  const checks = checksumLines(props.checksums.slice(start, end));
-  const checksumText = checks.join('\n');
-  const remaining = Math.max(0, props.checksums.length - end);
 
   const rawLines = props.pageText.replace(/\r\n/g, '\n').split('\n');
   const messageLines = rawLines.flatMap((l) => wrapLine(l, ARMOR_WRAP_COLUMNS));

@@ -10,7 +10,7 @@ function App() {
   const [view, setView] = useState<'keys' | 'compose' | 'output' | 'decrypt'>('keys');
 
   return (
-    <div className="container-shell">
+    <div className={view === 'decrypt' ? 'container-shell container-shell-wide' : 'container-shell'}>
       <section className="hero-card">
         <Badge className="kv-badge">E2EE年賀状 / MVP</Badge>
         <h1 className="text-3xl md:text-4xl">E2EE年賀状</h1>

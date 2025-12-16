@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -43,6 +43,7 @@ export function DecryptAssist() {
   const [rawText, setRawText] = useState('');
   const [expectedText, setExpectedText] = useState('');
   const [qrScanOpen, setQrScanOpen] = useState(false);
+  const [pgpCameraOpen, setPgpCameraOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [ocrProgress, setOcrProgress] = useState<number | null>(null);
   const [status, setStatus] = useState<string | null>(null);
@@ -50,6 +51,9 @@ export function DecryptAssist() {
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [pdfName, setPdfName] = useState<string | null>(null);
   const [pdfProgress, setPdfProgress] = useState<{ page: number; total: number } | null>(null);
+  const pgpVideoRef = useRef<HTMLVideoElement | null>(null);
+  const pgpStreamRef = useRef<MediaStream | null>(null);
+  const imageUrlRef = useRef<string | null>(null);
 
   const normalizedText = useMemo(() => normalizeOcrArmored(rawText, ARMOR_WRAP_COLUMNS), [rawText]);
   const expected = useMemo(() => parseExpectedChecksums(expectedText), [expectedText]);
@@ -90,6 +94,15 @@ export function DecryptAssist() {
       }
 
       const countMismatch = expected.length !== checksums.length;
+      if (countMismatch) {
+        const expectedMap = new Map(expected.map((e) => [e.index, e.checksum]));
+        const max = Math.max(expected.length, checksums.length);
+        for (let i = 1; i <= max; i++) {
+          const exp = expectedMap.get(i);
+          const got = computedMap.get(i);
+          if (!exp || !got || exp !== got) mismatches.add(i);
+        }
+      }
       const fullMatch = !countMismatch && mismatches.size === 0;
       const summary = countMismatch
         ? `チェックサム数が一致しません（QR:${expected.length} / 計算:${checksums.length}）`
@@ -172,21 +185,111 @@ export function DecryptAssist() {
 
   const onPickImage = async (file: File | null) => {
     if (!file) return;
-    if (imageUrl) URL.revokeObjectURL(imageUrl);
+    if (imageUrlRef.current) URL.revokeObjectURL(imageUrlRef.current);
     const url = URL.createObjectURL(file);
     setImageUrl(url);
+    imageUrlRef.current = url;
     setPdfName(null);
     await runOcr(file);
   };
 
   const onPickPdf = async (file: File | null) => {
     if (!file) return;
-    if (imageUrl) {
-      URL.revokeObjectURL(imageUrl);
+    if (imageUrlRef.current) {
+      URL.revokeObjectURL(imageUrlRef.current);
       setImageUrl(null);
+      imageUrlRef.current = null;
     }
     setPdfName(file.name);
     await runPdfOcr(file);
+  };
+
+  const onPickSource = async (file: File | null) => {
+    if (!file) return;
+    if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+      await onPickPdf(file);
+      return;
+    }
+    if (file.type.startsWith('image/')) {
+      await onPickImage(file);
+      return;
+    }
+    setError(`未対応のファイル形式です: ${file.type || file.name}`);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (imageUrlRef.current) URL.revokeObjectURL(imageUrlRef.current);
+      pgpStreamRef.current?.getTracks().forEach((t) => t.stop());
+      pgpStreamRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (!pgpCameraOpen) {
+      pgpStreamRef.current?.getTracks().forEach((t) => t.stop());
+      pgpStreamRef.current = null;
+      return;
+    }
+
+    let alive = true;
+    (async () => {
+      try {
+        if (!navigator.mediaDevices?.getUserMedia) {
+          throw new Error('このブラウザではカメラが利用できません');
+        }
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' } },
+          audio: false,
+        });
+        if (!alive) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        pgpStreamRef.current = stream;
+        if (pgpVideoRef.current) {
+          pgpVideoRef.current.srcObject = stream;
+          await pgpVideoRef.current.play();
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        setError(`カメラ起動に失敗しました: ${msg}`);
+        setPgpCameraOpen(false);
+      }
+    })();
+
+    return () => {
+      alive = false;
+      pgpStreamRef.current?.getTracks().forEach((t) => t.stop());
+      pgpStreamRef.current = null;
+    };
+  }, [pgpCameraOpen]);
+
+  const capturePgpFromCamera = async () => {
+    const video = pgpVideoRef.current;
+    if (!video) return;
+    if (!video.videoWidth || !video.videoHeight) {
+      setError('カメラ映像の準備ができていません');
+      return;
+    }
+
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      setError('Canvasの初期化に失敗しました');
+      return;
+    }
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    const blob = await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('画像生成に失敗しました'))), 'image/png');
+    });
+    const file = new File([blob], `pgp-camera-${Date.now()}.png`, { type: 'image/png' });
+    setPgpCameraOpen(false);
+    await onPickSource(file);
   };
 
   const gpgCommand = 'gpg --decrypt message.asc';
@@ -197,145 +300,221 @@ export function DecryptAssist() {
         <CardTitle>復号支援</CardTitle>
         <CardDescription>OCR結果を正規化し、チェックサム照合・手修正のガイドをします（復号は外部gpg）。</CardDescription>
       </CardHeader>
-      <CardContent className="space-y-6">
-        <div className="grid gap-6 lg:grid-cols-2">
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <div className="flex items-center justify-between gap-2">
-                <div className="text-sm font-semibold text-foreground">画像/PDFからOCR（任意）</div>
-                {ocrProgress !== null && <Badge variant="secondary">OCR {ocrProgress}%</Badge>}
-                {pdfProgress && (
-                  <Badge variant="secondary">
-                    PDF {pdfProgress.page}/{pdfProgress.total}
-                  </Badge>
-                )}
-              </div>
-              <div className="grid gap-2 sm:grid-cols-2">
-                <Input
-                  type="file"
-                  accept="image/png,image/jpeg"
-                  onChange={(e) => onPickImage(e.target.files?.[0] ?? null)}
-                  disabled={busy}
-                />
-                <Input
-                  type="file"
-                  accept="application/pdf"
-                  onChange={(e) => onPickPdf(e.target.files?.[0] ?? null)}
-                  disabled={busy}
-                />
-              </div>
-              {imageUrl && (
-                <img
-                  src={imageUrl}
-                  alt="OCR source"
-                  className="w-full rounded-xl border bg-white"
-                  style={{ maxHeight: 240, objectFit: 'contain' }}
-                />
+      <CardContent className="space-y-8">
+        <div className="space-y-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="text-sm font-semibold text-foreground">入力（画像/PDFのOCR or 貼り付け）</div>
+            <div className="flex items-center gap-2">
+              {ocrProgress !== null && <Badge variant="secondary">OCR {ocrProgress}%</Badge>}
+              {pdfProgress && (
+                <Badge variant="secondary">
+                  PDF {pdfProgress.page}/{pdfProgress.total}
+                </Badge>
               )}
-              {pdfName && <div className="text-xs text-muted-foreground">PDF: {pdfName}（最大20ページまでOCR）</div>}
-            </div>
-
-            <div className="space-y-2">
-              <div className="text-sm font-semibold text-foreground">PGPメッセージ（OCR結果 or 貼り付け）</div>
-              <Textarea value={rawText} onChange={(e) => setRawText(e.target.value)} className="font-mono min-h-[220px]" />
-              <div className="text-xs text-muted-foreground">
-                正規化: `BEGIN/END` を探して base64 部分の空白を除去し、{ARMOR_WRAP_COLUMNS}文字幅で再wrapします。
-              </div>
             </div>
           </div>
 
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <div className="flex items-center justify-between gap-2">
-                <div className="text-sm font-semibold text-foreground">チェックサムQR（文字列）</div>
-                <div className="flex items-center gap-2">
-                  <Button variant="outline" size="sm" onClick={() => setQrScanOpen((v) => !v)} disabled={busy}>
-                    {qrScanOpen ? 'スキャン停止' : 'QRスキャン'}
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={() => setExpectedText('')} disabled={busy}>
-                    クリア
-                  </Button>
-                </div>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <Input
+              type="file"
+              accept="image/*,application/pdf"
+              capture="environment"
+              onChange={(e) => {
+                const file = e.target.files?.[0] ?? null;
+                e.target.value = '';
+                void onPickSource(file);
+              }}
+              disabled={busy}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setQrScanOpen(false);
+                setPgpCameraOpen((v) => !v);
+              }}
+              disabled={busy}
+              className="shrink-0"
+            >
+              {pgpCameraOpen ? 'PGPカメラ停止' : 'PGPカメラで撮影'}
+            </Button>
+          </div>
+
+          {pgpCameraOpen ? (
+            <div className="rounded-xl border bg-white p-3 space-y-2">
+              <video ref={pgpVideoRef} className="w-full rounded-lg bg-black" playsInline muted />
+              <div className="flex flex-wrap items-center gap-2">
+                <Button type="button" onClick={() => void capturePgpFromCamera()} disabled={busy}>
+                  この画面を撮影してOCR
+                </Button>
+                <Button type="button" variant="outline" onClick={() => setPgpCameraOpen(false)} disabled={busy}>
+                  閉じる
+                </Button>
+                <div className="text-xs text-muted-foreground">カメラは `https` または `localhost` でのみ動作します。</div>
               </div>
-              {qrScanOpen ? (
-                <div className="rounded-xl border bg-white p-2">
-                  <Scanner
-                    //delay={250}
-                    onScan={onQrScan}
-                    onError={onQrError}
-                    constraints={{ facingMode: { ideal: 'environment' } }}
-                    //style={{ width: '100%' }}
-                  />
-                  <div className="pt-2 text-xs text-muted-foreground">
-                    カメラは `https` または `localhost` でのみ動作します。
-                  </div>
-                </div>
-              ) : null}
-              <Textarea
-                value={expectedText}
-                onChange={(e) => setExpectedText(e.target.value)}
-                placeholder={`例:\nSC4:2:ABCD...`}
-                className="font-mono min-h-[160px]"
-              />
-              <div className="text-xs text-muted-foreground">スマホ等でQRを読み取り、出てきた文字列（SC4:...）を貼り付けてください。</div>
             </div>
+          ) : null}
 
-            <div className="flex flex-wrap items-center gap-2">
-              <Button onClick={recompute} disabled={busy}>
-                {busy ? '処理中…' : '正規化 + チェックサム照合'}
+          {imageUrl && (
+            <img
+              src={imageUrl}
+              alt="OCR source"
+              className="w-full rounded-xl border bg-white"
+              style={{ maxHeight: 260, objectFit: 'contain' }}
+            />
+          )}
+          {pdfName && <div className="text-xs text-muted-foreground">PDF: {pdfName}（最大20ページまでOCR）</div>}
+        </div>
+
+        <div className="space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <div className="text-sm font-semibold text-foreground">チェックサムQR（文字列）</div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setPgpCameraOpen(false);
+                  setQrScanOpen((v) => !v);
+                }}
+                disabled={busy}
+              >
+                {qrScanOpen ? 'スキャン停止' : 'QRスキャン'}
               </Button>
-              {status && <Badge variant="success">{status}</Badge>}
-              {error && <Badge variant="destructive">{error}</Badge>}
+              <Button variant="outline" size="sm" onClick={() => setExpectedText('')} disabled={busy}>
+                クリア
+              </Button>
             </div>
+          </div>
+          {qrScanOpen ? (
+            <div className="rounded-xl border bg-white p-2">
+              <Scanner onScan={onQrScan} onError={onQrError} constraints={{ facingMode: { ideal: 'environment' } }} />
+              <div className="pt-2 text-xs text-muted-foreground">カメラは `https` または `localhost` でのみ動作します。</div>
+            </div>
+          ) : null}
+          <Textarea
+            value={expectedText}
+            onChange={(e) => setExpectedText(e.target.value)}
+            placeholder={`例:\nSC4:2:ABCD...`}
+            className="font-mono min-h-[140px]"
+          />
+          <div className="text-xs text-muted-foreground">スマホ等でQRを読み取り、出てきた文字列（SC4:...）を貼り付けてください。</div>
+        </div>
 
-            <div className="space-y-2">
-              <div className="text-sm font-semibold text-foreground">プレビュー（黄: 誤読しやすい / 赤: チェックサム不一致）</div>
+        <div className="space-y-2">
+          <div className="text-sm font-semibold text-foreground">PGPメッセージ（OCR結果 or 貼り付け）</div>
+          <Textarea value={rawText} onChange={(e) => setRawText(e.target.value)} className="font-mono min-h-[280px]" />
+          <div className="text-xs text-muted-foreground">
+            正規化: `BEGIN/END` を探して base64 部分の空白を除去し、{ARMOR_WRAP_COLUMNS}文字幅で再wrapします。
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <Button onClick={recompute} disabled={busy}>
+            {busy ? '処理中…' : '正規化 + チェックサム照合'}
+          </Button>
+          {status && <Badge variant="success">{status}</Badge>}
+          {error && <Badge variant="destructive">{error}</Badge>}
+        </div>
+
+        <div className="space-y-2">
+          <div className="text-sm font-semibold text-foreground">プレビュー（緑: OK / 黄: 誤読しやすい / 赤: チェックサム不一致）</div>
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
+            <div className="min-w-0 flex-1">
               <HighlightedArmoredText
                 text={computedState?.text ?? normalizedText}
                 blocks={computedState?.checksums ?? []}
                 mismatchIndices={computedState?.mismatchIndices ?? new Set<number>()}
               />
             </div>
-
-            <div className="rounded-xl border bg-card p-4 space-y-2">
-              <div className="text-sm font-semibold text-foreground">復号コマンド</div>
-              <div className="text-xs text-muted-foreground">
-                {computedState?.fullMatch
-                  ? 'チェックサムが全ブロック一致しました。外部gpgで復号してください。'
-                  : 'チェックサムが全ブロック一致するまで、赤い領域（ブロック）を中心に修正してください。'}
-              </div>
-              <div className="rounded-lg border bg-white px-3 py-2 font-mono text-sm">{gpgCommand}</div>
-              <div className="flex flex-wrap items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => copyToClipboard(gpgCommand).then(() => setStatus('コマンドをコピーしました'))}
-                >
-                  コピー
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    const text = computedState?.text ?? normalizedText;
-                    if (text.trim()) downloadText('message.asc', text);
-                  }}
-                  disabled={!(computedState?.text ?? normalizedText).trim()}
-                >
-                  message.asc 保存
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() =>
-                    copyToClipboard((computedState?.text ?? normalizedText) || '').then(() => setStatus('暗号文をコピーしました'))
+            <div className="w-full lg:w-[260px] shrink-0">
+              <div className="rounded-xl border bg-white p-3 space-y-2">
+                <div className="text-xs font-semibold text-foreground">ブロック別チェックサム</div>
+                <div className="text-xs text-muted-foreground">4ブロック=1行（はがきの分割に対応）</div>
+                {(() => {
+                  const computed = computedState?.checksums ?? [];
+                  if (!computed.length && expected.length === 0) {
+                    return <div className="text-xs text-muted-foreground">（まだありません）</div>;
                   }
-                  disabled={!(computedState?.text ?? normalizedText).trim()}
-                >
-                  暗号文コピー
-                </Button>
+                  const expectedMap = new Map(expected.map((e) => [e.index, e.checksum]));
+                  const computedMap = new Map(computed.map((c) => [c.index, c.checksum]));
+                  const maxIndex = Math.max(
+                    0,
+                    ...Array.from(expectedMap.keys()),
+                    ...Array.from(computedMap.keys()),
+                  );
+                  const mismatch = computedState?.mismatchIndices ?? new Set<number>();
+                  const rows: number[][] = [];
+                  for (let i = 1; i <= maxIndex; i += 4) rows.push([i, i + 1, i + 2, i + 3].filter((n) => n <= maxIndex));
+                  return (
+                    <div className="space-y-1">
+                      {rows.map((row, ridx) => (
+                        <div key={ridx} className="grid grid-cols-4 gap-1">
+                          {row.map((idx) => {
+                            const exp = expectedMap.get(idx);
+                            const got = computedMap.get(idx);
+                            const isMismatch = mismatch.has(idx);
+                            const ok = !!exp && !!got && exp === got && !isMismatch;
+                            const cls = ok
+                              ? 'bg-emerald-100 text-emerald-900 border-emerald-200'
+                              : isMismatch
+                                ? 'bg-red-100 text-red-900 border-red-200'
+                                : 'bg-slate-100 text-slate-700 border-slate-200';
+                            return (
+                              <div
+                                key={idx}
+                                className={`rounded-md border px-1.5 py-1 font-mono text-[11px] leading-none ${cls}`}
+                                title={`#${idx} expected=${exp ?? '—'} got=${got ?? '—'}`}
+                              >
+                                <div className="flex items-center justify-between gap-1">
+                                  <span className="opacity-70">{idx}</span>
+                                  <span>{(got ?? exp ?? '—').toUpperCase()}</span>
+                                </div>
+                              </div>
+                            );
+                          })}
+                          {row.length < 4 ? Array.from({ length: 4 - row.length }).map((_, i) => <div key={`pad-${i}`} />) : null}
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
               </div>
             </div>
+          </div>
+        </div>
+
+        <div className="rounded-xl border bg-card p-4 space-y-2">
+          <div className="text-sm font-semibold text-foreground">復号コマンド</div>
+          <div className="text-xs text-muted-foreground">
+            {computedState?.fullMatch
+              ? 'チェックサムが全ブロック一致しました。外部gpgで復号してください。'
+              : 'チェックサムが全ブロック一致するまで、赤い領域（ブロック）を中心に修正してください。'}
+          </div>
+          <div className="rounded-lg border bg-white px-3 py-2 font-mono text-sm">{gpgCommand}</div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => copyToClipboard(gpgCommand).then(() => setStatus('コマンドをコピーしました'))}>
+              コピー
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                const text = computedState?.text ?? normalizedText;
+                if (text.trim()) downloadText('message.asc', text);
+              }}
+              disabled={!(computedState?.text ?? normalizedText).trim()}
+            >
+              message.asc 保存
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => copyToClipboard((computedState?.text ?? normalizedText) || '').then(() => setStatus('暗号文をコピーしました'))}
+              disabled={!(computedState?.text ?? normalizedText).trim()}
+            >
+              暗号文コピー
+            </Button>
           </div>
         </div>
       </CardContent>
