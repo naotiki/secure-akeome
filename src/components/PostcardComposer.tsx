@@ -121,7 +121,7 @@ export function PostcardComposer() {
         const encryptedMessage = await encryptForRecipient(plaintext, recipient);
         const printable = rewrapArmoredMessage(encryptedMessage, ARMOR_WRAP_COLUMNS);
         const pages = splitByLines(printable, POSTCARD_LINES_PER_PAGE);
-        const checksums = await computeChecksums(printable, 256, 4);
+        const checksums = await computeChecksums(printable, { parts: 4, displayChars: 2 });
         const baseDraft: PostcardDraft = {
           id: crypto.randomUUID(),
           recipientFingerprint: recipient.fingerprint,

@@ -1,7 +1,8 @@
 import satori from 'satori';
 import type { ChecksumBlock } from '@/types';
 import { loadSatoriFonts } from './fonts';
-import { ARMOR_WRAP_COLUMNS, CHECKSUM_BLOCKS_PER_PAGE, POSTCARD_TEXT_SCALE } from './constants';
+import { ARMOR_WRAP_COLUMNS, CHECKSUM_BLOCKS_PER_PAGE, CHECKSUM_QR_SIZE_PX, POSTCARD_TEXT_SCALE } from './constants';
+import { checksumQrDataUrl } from './checksum-qr';
 
 export type PostcardRenderParams = {
   senderFingerprint: string;
@@ -10,6 +11,7 @@ export type PostcardRenderParams = {
   pageIndex: number; // 1-based
   pageCount: number;
   checksums: ChecksumBlock[];
+  checksumQrDataUrl?: string;
 };
 
 // Landscape postcard (more width improves OCR reliability for armored blocks).
@@ -52,8 +54,7 @@ function Template(props: PostcardRenderParams) {
   const start = (props.pageIndex - 1) * CHECKSUM_BLOCKS_PER_PAGE;
   const end = start + CHECKSUM_BLOCKS_PER_PAGE;
   const checks = checksumLines(props.checksums.slice(start, end));
-  const left = checks.slice(0, Math.ceil(checks.length / 2)).join('\n');
-  const right = checks.slice(Math.ceil(checks.length / 2)).join('\n');
+  const checksumText = checks.join('\n');
   const remaining = Math.max(0, props.checksums.length - end);
 
   const rawLines = props.pageText.replace(/\r\n/g, '\n').split('\n');
@@ -61,24 +62,119 @@ function Template(props: PostcardRenderParams) {
   const messageFont = 'OCR Mono, JetBrains Mono';
 
   return (
+    <div
+      style={{
+        width: '100%',
+        height: '100%',
+        display: 'flex',
+        flexDirection: 'column',
+        backgroundColor: '#ffffff',
+        padding: 18,
+        boxSizing: 'border-box',
+        fontFamily: 'JetBrains Mono',
+        gap: 14,
+      }}
+    >
+      {/* Row 1: PGP message (80%) + checksums (20%) */}
+      <div style={{ display: 'flex', flexDirection: 'row', flex: 1, gap: 14, minHeight: 0 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', flexGrow: 4, flexBasis: 0, minWidth: 0, gap: 8 }}>
+          <div style={{ display: 'flex', gap: 6, fontSize: px(12), color: '#64748b' }}>
+            <span>PGP MESSAGE (ASCII armored)</span>
+          </div>
+          <div
+            style={{
+              flex: 1,
+              border: '1px solid #e2e8f0',
+              borderRadius: 16,
+              padding: 14,
+              backgroundColor: '#ffffff',
+              boxSizing: 'border-box',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 0,
+              minHeight: 0,
+            }}
+          >
+            {messageLines.map((line, idx) => (
+              <div key={idx} style={{ display: 'flex' }}>
+                <span style={{ fontSize: px(14), lineHeight: 1.1, color: '#0f172a', fontFamily: messageFont }}>
+                  {line === '' ? '\u00A0' : line}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', flexGrow: 1, flexBasis: 0, minWidth: 0, gap: 8 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ display: 'flex', gap: 6, fontSize: px(12), color: '#0f172a' }}>
+              <span>CHECKSUM</span>
+            </div>
+            <div style={{ display: 'flex', gap: 6, fontSize: px(10), color: '#64748b' }}>
+              <span>
+                {start + 1}..{Math.min(end, props.checksums.length)}
+              </span>
+              <span>/</span>
+              <span>{props.checksums.length}</span>
+            </div>
+          </div>
+          <div
+            style={{
+              flex: 1,
+              border: '1px solid #e2e8f0',
+              borderRadius: 16,
+              padding: 12,
+              boxSizing: 'border-box',
+              backgroundColor: '#ffffff',
+              minHeight: 0,
+              display: 'flex',
+              flexDirection: 'column',
+            }}
+          >
+            <pre
+              style={{
+                margin: 0,
+                fontFamily: 'JetBrains Mono',
+                fontSize: px(10),
+                lineHeight: 1.05,
+                color: '#334155',
+                whiteSpace: 'pre-wrap',
+              }}
+            >
+              {checksumText}
+            </pre>
+            {remaining > 0 && (
+              <div style={{ display: 'flex', gap: 6, fontSize: px(10), color: '#64748b', marginTop: 6 }}>
+                <span>次ページに続きます</span>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Row 2: FROM/TO + page num + QR */}
       <div
         style={{
-          width: '100%',
-          height: '100%',
           display: 'flex',
           flexDirection: 'row',
-          backgroundColor: '#ffffff',
-          padding: 18,
+          alignItems: 'flex-end',
+          justifyContent: 'space-between',
+          gap: 14,
+          border: '1px solid #e2e8f0',
+          borderRadius: 16,
+          padding: 12,
           boxSizing: 'border-box',
-          fontFamily: 'JetBrains Mono',
-          gap: 16,
         }}
       >
-      <div style={{ display: 'flex', flexDirection: 'column', flex: 1, gap: 12 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-            <div style={{ display: 'flex', gap: 6, fontSize: px(12), color: '#64748b' }}>
-              <span>PGP MESSAGE (ASCII armored)</span>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', flexDirection: 'row', gap: 18, fontSize: px(12), color: '#0f172a' }}>
+            <div style={{ display: 'flex', gap: 6, minWidth: 0 }}>
+              <span style={{ color: '#64748b' }}>FROM:</span>
+              <span style={{ color: '#0284c7' }}>{formatFingerprint(props.senderFingerprint)}</span>
+            </div>
+            <div style={{ display: 'flex', gap: 6, minWidth: 0 }}>
+              <span style={{ color: '#64748b' }}>TO:</span>
+              <span style={{ color: '#0284c7' }}>{formatFingerprint(props.recipientFingerprint)}</span>
             </div>
           </div>
           <div
@@ -91,6 +187,7 @@ function Template(props: PostcardRenderParams) {
               padding: '6px 10px',
               borderRadius: 999,
               border: '1px solid #bae6fd',
+              width: 'fit-content',
             }}
           >
             <span>PAGE</span>
@@ -100,120 +197,25 @@ function Template(props: PostcardRenderParams) {
           </div>
         </div>
 
-        <div
-          style={{
-            flex: 1,
-            border: '1px solid #e2e8f0',
-            borderRadius: 16,
-            padding: 14,
-            backgroundColor: '#ffffff',
-            boxSizing: 'border-box',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 0,
-          }}
-        >
-          {messageLines.map((line, idx) => (
-            <div key={idx} style={{ display: 'flex' }}>
-              <span style={{ fontSize: px(14), lineHeight: 1.1, color: '#0f172a', fontFamily: messageFont }}>
-                {line === '' ? '\u00A0' : line}
-              </span>
+        {props.checksumQrDataUrl ? (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
+            <div style={{ display: 'flex', gap: 6, fontSize: px(10), color: '#64748b' }}>
+              <span>CHECKSUM QR</span>
             </div>
-          ))}
-        </div>
-      </div>
-
-      <div style={{ display: 'flex', flexDirection: 'column', width: 420, gap: 12 }}>
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 10,
-            border: '1px solid #e2e8f0',
-            borderRadius: 16,
-            padding: 14,
-            boxSizing: 'border-box',
-          }}
-        >
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-              <div style={{ display: 'flex', gap: 6, fontSize: px(12), color: '#334155' }}>
-                <span>RECIPIENT FP</span>
-              </div>
-              <div style={{ display: 'flex', gap: 6, fontSize: px(16), color: '#0284c7' }}>
-                <span>{formatFingerprint(props.recipientFingerprint)}</span>
-              </div>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-              <div style={{ display: 'flex', gap: 6, fontSize: px(12), color: '#334155' }}>
-                <span>SENDER FP</span>
-              </div>
-              <div style={{ display: 'flex', gap: 6, fontSize: px(16), color: '#0284c7' }}>
-                <span>{formatFingerprint(props.senderFingerprint)}</span>
-              </div>
-            </div>
+            <img
+              src={props.checksumQrDataUrl}
+              width={CHECKSUM_QR_SIZE_PX}
+              height={CHECKSUM_QR_SIZE_PX}
+              style={{
+                width: CHECKSUM_QR_SIZE_PX,
+                height: CHECKSUM_QR_SIZE_PX,
+                borderRadius: 8,
+                border: '1px solid #e2e8f0',
+                backgroundColor: '#ffffff',
+              }}
+            />
           </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div style={{ display: 'flex', gap: 6, fontSize: px(12), color: '#0f172a' }}>
-                <span>CHECKSUM</span>
-              </div>
-              <div style={{ display: 'flex', gap: 6, fontSize: px(10), color: '#64748b' }}>
-                <span>
-                  {start + 1}..{Math.min(end, props.checksums.length)}
-                </span>
-                <span>/</span>
-                <span>{props.checksums.length}</span>
-              </div>
-            </div>
-            <div style={{ display: 'flex', gap: 12 }}>
-              <pre
-                style={{
-                  margin: 0,
-                  flex: 1,
-                  fontFamily: 'JetBrains Mono',
-                  fontSize: px(14),
-                  lineHeight: 1.2,
-                  color: '#334155',
-                  whiteSpace: 'pre-wrap',
-                }}
-              >
-                {left}
-              </pre>
-              <pre
-                style={{
-                  margin: 0,
-                  flex: 1,
-                  fontFamily: 'JetBrains Mono',
-                  fontSize: px(14),
-                  lineHeight: 1.2,
-                  color: '#334155',
-                  whiteSpace: 'pre-wrap',
-                }}
-              >
-                {right}
-              </pre>
-            </div>
-            {remaining > 0 && (
-              <div style={{ display: 'flex', gap: 6, fontSize: px(10), color: '#64748b' }}>
-                <span>次ページに続きます</span>
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 4,
-            border: '1px solid #e2e8f0',
-            borderRadius: 16,
-            padding: 12,
-          }}
-        >
-        </div>
+        ) : null}
       </div>
     </div>
   );
@@ -221,7 +223,8 @@ function Template(props: PostcardRenderParams) {
 
 export async function renderPostcardSvg(params: PostcardRenderParams): Promise<string> {
   const fonts = await loadSatoriFonts();
-  const svg = await satori(<Template {...params} />, {
+  const qr = params.checksumQrDataUrl ?? (await checksumQrDataUrl(params.checksums, CHECKSUM_QR_SIZE_PX)) ?? undefined;
+  const svg = await satori(<Template {...params} checksumQrDataUrl={qr} />, {
     width: POSTCARD_PX.width,
     height: POSTCARD_PX.height,
     fonts,

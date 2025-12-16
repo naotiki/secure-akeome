@@ -11,6 +11,7 @@ import { HighlightedArmoredText } from '@/ocr/highlight';
 import { ARMOR_WRAP_COLUMNS } from '@/postcard/constants';
 import { ocrPdfToText } from '@/ocr/pdf-ocr';
 import { recognizePgpText } from '@/ocr/tesseract-pgp';
+import { Scanner, type IDetectedBarcode } from '@yudiel/react-qr-scanner';
 
 function downloadText(filename: string, content: string) {
   const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
@@ -41,6 +42,7 @@ async function copyToClipboard(text: string) {
 export function DecryptAssist() {
   const [rawText, setRawText] = useState('');
   const [expectedText, setExpectedText] = useState('');
+  const [qrScanOpen, setQrScanOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [ocrProgress, setOcrProgress] = useState<number | null>(null);
   const [status, setStatus] = useState<string | null>(null);
@@ -71,9 +73,14 @@ export function DecryptAssist() {
       return;
     }
 
+    if (expected.length === 0) {
+      setError('チェックサムQRの文字列（例: SC4:2:...）を入力してください');
+      return;
+    }
+
     setBusy(true);
     try {
-      const checksums = await computeChecksums(text, 256, 4);
+      const checksums = await computeChecksums(text, { parts: 4, displayChars: 2 });
       const computedMap = new Map(checksums.map((c) => [c.index, c.checksum]));
       const mismatches = new Set<number>();
 
@@ -82,15 +89,15 @@ export function DecryptAssist() {
         if (!got || got !== e.checksum) mismatches.add(e.index);
       }
 
-      const fullMatch = expected.length > 0 && expected.length === checksums.length && mismatches.size === 0;
-      const summary =
-        expected.length === 0
-          ? `チェックサムを計算しました（${checksums.length} blocks）`
-          : fullMatch
-            ? 'チェックサム一致（復号OK）'
-            : mismatches.size === 0
-              ? `入力したチェックサムは一致（${expected.length}/${checksums.length} blocks）`
-              : `不一致: ${Array.from(mismatches).slice(0, 20).join(', ')}${mismatches.size > 20 ? '…' : ''}`;
+      const countMismatch = expected.length !== checksums.length;
+      const fullMatch = !countMismatch && mismatches.size === 0;
+      const summary = countMismatch
+        ? `チェックサム数が一致しません（QR:${expected.length} / 計算:${checksums.length}）`
+        : fullMatch
+          ? 'チェックサム一致（復号OK）'
+          : mismatches.size === 0
+            ? `チェックサムは一致（${expected.length}/${checksums.length} blocks）`
+            : `不一致: ${Array.from(mismatches).slice(0, 20).join(', ')}${mismatches.size > 20 ? '…' : ''}`;
 
       setComputedState({ text, checksums, mismatchIndices: mismatches, fullMatch, summary });
       setStatus(summary);
@@ -143,6 +150,24 @@ export function DecryptAssist() {
       setBusy(false);
       setPdfProgress(null);
     }
+  };
+
+  const onQrScan = (result: IDetectedBarcode[]) => {
+    const value = result[0]?.rawValue;
+    console.log('QR scan result:', result, '->', value);
+    if (!value) return;
+    const trimmed = value.trim();
+    if (!trimmed) return;
+
+    setExpectedText(trimmed);
+    setStatus('QRを読み取りました');
+    setError(null);
+    setQrScanOpen(false);
+  };
+
+  const onQrError = (err: unknown) => {
+    const msg = err instanceof Error ? err.message : String(err);
+    setError(`QRスキャンに失敗しました: ${msg}`);
   };
 
   const onPickImage = async (file: File | null) => {
@@ -222,18 +247,37 @@ export function DecryptAssist() {
           <div className="space-y-4">
             <div className="space-y-2">
               <div className="flex items-center justify-between gap-2">
-                <div className="text-sm font-semibold text-foreground">印字されたチェックサム</div>
-                <Button variant="outline" size="sm" onClick={() => setExpectedText('')} disabled={busy}>
-                  クリア
-                </Button>
+                <div className="text-sm font-semibold text-foreground">チェックサムQR（文字列）</div>
+                <div className="flex items-center gap-2">
+                  <Button variant="outline" size="sm" onClick={() => setQrScanOpen((v) => !v)} disabled={busy}>
+                    {qrScanOpen ? 'スキャン停止' : 'QRスキャン'}
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => setExpectedText('')} disabled={busy}>
+                    クリア
+                  </Button>
+                </div>
               </div>
+              {qrScanOpen ? (
+                <div className="rounded-xl border bg-white p-2">
+                  <Scanner
+                    //delay={250}
+                    onScan={onQrScan}
+                    onError={onQrError}
+                    constraints={{ facingMode: { ideal: 'environment' } }}
+                    //style={{ width: '100%' }}
+                  />
+                  <div className="pt-2 text-xs text-muted-foreground">
+                    カメラは `https` または `localhost` でのみ動作します。
+                  </div>
+                </div>
+              ) : null}
               <Textarea
                 value={expectedText}
                 onChange={(e) => setExpectedText(e.target.value)}
-                placeholder={`例:\n[1] ABCD\n[2] 91F3\n[3] 7E0B`}
+                placeholder={`例:\nSC4:2:ABCD...`}
                 className="font-mono min-h-[160px]"
               />
-              <div className="text-xs text-muted-foreground">入力形式: `[index] CODE`（コードは大文字小文字どちらでもOK）</div>
+              <div className="text-xs text-muted-foreground">スマホ等でQRを読み取り、出てきた文字列（SC4:...）を貼り付けてください。</div>
             </div>
 
             <div className="flex flex-wrap items-center gap-2">

@@ -6,6 +6,7 @@ import { useDraftsStore } from '@/useDraftsStore';
 import { useContactsStore } from '@/useContactsStore';
 import { renderPostcardSvg } from '@/postcard/render';
 import { svgsToPdfBytes } from '@/postcard/pdf';
+import { computeChecksums } from '@/crypto/checksum';
 
 function downloadBlob(filename: string, blob: Blob) {
   const url = URL.createObjectURL(blob);
@@ -71,6 +72,8 @@ export function PostcardOutput() {
     }
     setBusy(true);
     try {
+      // Always recompute (checksum spec may change and old drafts might have legacy checksums).
+      const checksums = await computeChecksums(selectedDraft.encryptedMessage, { parts: 4, displayChars: 2 });
       const pageCount = selectedDraft.pages.length;
       const generated: string[] = [];
       for (let i = 0; i < pageCount; i++) {
@@ -81,7 +84,7 @@ export function PostcardOutput() {
           pageText: selectedDraft.pages[i],
           pageIndex: i + 1,
           pageCount,
-          checksums: selectedDraft.checksums,
+          checksums,
         });
         generated.push(svg);
       }
