@@ -19,6 +19,8 @@ export type PostcardDraft = {
   id: string;
   recipientFingerprint: string;
   plaintext: string;
+  signedPlaintext?: string; // optional (e.g. gpg clearsign output)
+  signedAt?: string; // ISO string
   encryptedMessage: string;
   pages: string[];
   checksums: ChecksumBlock[];

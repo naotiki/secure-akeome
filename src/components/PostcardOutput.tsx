@@ -160,31 +160,34 @@ export function PostcardOutput() {
             ) : (
               <div className="rounded-2xl border bg-card divide-y">
                 {drafts.map((d) => (
-                  <button
-                    key={d.id}
-                    type="button"
-                    onClick={() => {
-                      setSelectedDraftId(d.id);
-                      setShowPlaintext(false);
-                    }}
-                    className={[
-                      'w-full text-left px-4 py-3 transition',
-                      selectedDraftId === d.id ? 'bg-sky-50' : 'hover:bg-slate-50',
-                    ].join(' ')}
-                  >
+	                  <button
+	                    key={d.id}
+	                    type="button"
+	                    onClick={() => {
+	                      setSelectedDraftId(d.id);
+	                      setShowPlaintext(false);
+	                    }}
+	                    className={[
+	                      'w-full text-left px-4 py-3 transition',
+	                      selectedDraftId === d.id ? 'bg-sky-50' : 'hover:bg-slate-50',
+	                    ].join(' ')}
+	                  >
                     <div className="text-sm font-semibold text-foreground">
                       {contacts.find((c) => c.fingerprint === d.recipientFingerprint)?.label ?? d.recipientFingerprint}
                     </div>
                     <div className="font-mono text-xs text-sky-600 break-all">{d.recipientFingerprint}</div>
-                    <div className="text-xs text-muted-foreground pt-1">{summarizePlaintext(d.plaintext)}</div>
-                    <div className="flex items-center justify-between pt-1">
-                      <span className="text-xs text-muted-foreground">{new Date(d.createdAt).toLocaleString()}</span>
-                      <Badge variant="secondary">{d.pages.length} pages</Badge>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            )}
+	                    <div className="text-xs text-muted-foreground pt-1">{summarizePlaintext(d.plaintext)}</div>
+	                    <div className="flex items-center justify-between pt-1">
+	                      <span className="text-xs text-muted-foreground">{new Date(d.createdAt).toLocaleString()}</span>
+	                      <div className="flex items-center gap-2">
+	                        {d.signedPlaintext ? <Badge variant="muted">signed</Badge> : null}
+	                        <Badge variant="secondary">{d.pages.length} pages</Badge>
+	                      </div>
+	                    </div>
+	                  </button>
+	                ))}
+	              </div>
+	            )}
 
             <div className="flex flex-wrap items-center gap-2">
               <Button onClick={generate} disabled={busy || !selectedDraft}>
@@ -205,15 +208,18 @@ export function PostcardOutput() {
             </div>
           </div>
 
-          <div className="space-y-3">
-            {selectedDraft ? (
-              <div className="rounded-2xl border bg-card px-4 py-3 space-y-2">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="text-sm font-semibold text-foreground">平文（ローカルのみ）</div>
-                  <div className="flex items-center gap-2">
-                    <Button type="button" size="sm" variant="outline" onClick={() => setShowPlaintext((v) => !v)}>
-                      {showPlaintext ? '隠す' : '表示'}
-                    </Button>
+	          <div className="space-y-3">
+	            {selectedDraft ? (
+	              <div className="rounded-2xl border bg-card px-4 py-3 space-y-2">
+	                <div className="flex flex-wrap items-center justify-between gap-2">
+	                  <div className="flex items-center gap-2">
+	                    <div className="text-sm font-semibold text-foreground">平文（ローカルのみ）</div>
+	                    {selectedDraft.signedPlaintext ? <Badge variant="muted">signed</Badge> : null}
+	                  </div>
+	                  <div className="flex items-center gap-2">
+	                    <Button type="button" size="sm" variant="outline" onClick={() => setShowPlaintext((v) => !v)}>
+	                      {showPlaintext ? '隠す' : '表示'}
+	                    </Button>
                     <Button
                       type="button"
                       size="sm"
@@ -225,17 +231,37 @@ export function PostcardOutput() {
                     </Button>
                   </div>
                 </div>
-                <pre
-                  className={[
-                    'rounded-xl border bg-white px-3 py-2 text-xs font-mono whitespace-pre-wrap break-words',
-                    showPlaintext ? 'text-slate-900' : 'text-muted-foreground',
-                  ].join(' ')}
-                  style={{ maxHeight: 180, overflow: 'auto' }}
-                >
-                  {showPlaintext ? selectedDraft.plaintext || '（平文なし）' : '（非表示）'}
-                </pre>
-              </div>
-            ) : null}
+	                <pre
+	                  className={[
+	                    'rounded-xl border bg-white px-3 py-2 text-xs font-mono whitespace-pre-wrap break-words',
+	                    showPlaintext ? 'text-slate-900' : 'text-muted-foreground',
+	                  ].join(' ')}
+	                  style={{ maxHeight: 180, overflow: 'auto' }}
+	                >
+	                  {showPlaintext ? selectedDraft.plaintext || '（平文なし）' : '（非表示）'}
+	                </pre>
+	                {selectedDraft.signedPlaintext ? (
+	                  <details className="rounded-xl border bg-background/30 px-3 py-2">
+	                    <summary className="cursor-pointer text-sm text-foreground">署名付き本文（gpg / ローカルのみ）</summary>
+	                    <div className="mt-2 flex flex-wrap items-center justify-end gap-2">
+	                      <Button
+	                        type="button"
+	                        variant="outline"
+	                        size="sm"
+	                        onClick={() =>
+	                          copyToClipboard(selectedDraft.signedPlaintext ?? '').then(() => setStatus('署名付き本文をコピーしました'))
+	                        }
+	                      >
+	                        署名付き本文コピー
+	                      </Button>
+	                    </div>
+	                    <pre className="mt-2 whitespace-pre-wrap break-words text-xs text-muted-foreground font-mono">
+	                      {selectedDraft.signedPlaintext}
+	                    </pre>
+	                  </details>
+	                ) : null}
+	              </div>
+	            ) : null}
             <div className="flex items-center justify-between gap-2">
               <div>
                 <div className="text-sm font-semibold text-foreground">プレビュー</div>
