@@ -1,11 +1,22 @@
 import type { ReactNode } from 'react';
 import type { ChecksumBlock } from '@/types';
 
-const AMBIGUOUS = new Set(['0', 'O', 'o', '1', 'I', 'l', 'S', 's', '5', 'B', 'b', '8']);
+export const DEFAULT_AMBIGUOUS_CHARS = '0Oo1IlSs5Bb8';
+
+function ambiguousSetFromChars(chars: string | Set<string> | undefined) {
+  if (!chars) return new Set<string>();
+  if (chars instanceof Set) return chars;
+  const set = new Set<string>();
+  for (const ch of chars) {
+    if (/\s/.test(ch)) continue;
+    set.add(ch);
+  }
+  return set;
+}
 
 type Segment = { text: string; kind: 'normal' | 'ambiguous' };
 
-function segmentAmbiguous(text: string): Segment[] {
+function segmentAmbiguous(text: string, ambiguous: Set<string>): Segment[] {
   const segments: Segment[] = [];
   let buf = '';
   let bufKind: Segment['kind'] = 'normal';
@@ -17,7 +28,7 @@ function segmentAmbiguous(text: string): Segment[] {
   };
 
   for (const ch of text) {
-    const kind: Segment['kind'] = AMBIGUOUS.has(ch) ? 'ambiguous' : 'normal';
+    const kind: Segment['kind'] = ambiguous.has(ch) ? 'ambiguous' : 'normal';
     if (kind !== bufKind) {
       flush();
       bufKind = kind;
@@ -32,8 +43,10 @@ export function HighlightedArmoredText(props: {
   text: string;
   blocks: ChecksumBlock[];
   mismatchIndices: Set<number>;
+  ambiguousChars?: string | Set<string>;
 }) {
   const { text, blocks, mismatchIndices } = props;
+  const ambiguous = ambiguousSetFromChars(props.ambiguousChars ?? DEFAULT_AMBIGUOUS_CHARS);
   if (!text) return null;
 
   if (!blocks.length) {
@@ -62,7 +75,7 @@ export function HighlightedArmoredText(props: {
 
           const chunk = text.slice(start, end);
           const isMismatch = mismatchIndices.has(b.index);
-          const segments = segmentAmbiguous(chunk);
+          const segments = segmentAmbiguous(chunk, ambiguous);
           const blockClass = isMismatch
             ? 'bg-red-100/80 outline outline-1 outline-red-200 outline-offset-[-1px]'
             : 'bg-emerald-100/70 outline outline-1 outline-emerald-200 outline-offset-[-1px]';

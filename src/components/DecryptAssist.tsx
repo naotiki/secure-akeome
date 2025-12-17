@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { normalizeOcrArmored } from '@/ocr/normalize';
 import { parseExpectedChecksums } from '@/ocr/checksum-parse';
 import { computeChecksums } from '@/crypto/checksum';
-import { HighlightedArmoredText } from '@/ocr/highlight';
+import { DEFAULT_AMBIGUOUS_CHARS, HighlightedArmoredText } from '@/ocr/highlight';
 import { ARMOR_WRAP_COLUMNS } from '@/postcard/constants';
 import { ocrPdfToText } from '@/ocr/pdf-ocr';
 import { recognizePgpText } from '@/ocr/tesseract-pgp';
@@ -39,6 +39,22 @@ async function copyToClipboard(text: string) {
   document.body.removeChild(textarea);
 }
 
+function safeGetLocalStorage(key: string) {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function safeSetLocalStorage(key: string, value: string) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // ignore
+  }
+}
+
 function pickHeredocDelimiter(text: string) {
   const base = 'SECURE_AKEOME_PGP_MESSAGE';
   if (!text.includes(base)) return base;
@@ -58,6 +74,7 @@ function makeGpgDecryptCommand(armored: string) {
 export function DecryptAssist() {
   const [rawText, setRawText] = useState('');
   const [expectedText, setExpectedText] = useState('');
+  const [ambiguousChars, setAmbiguousChars] = useState(() => safeGetLocalStorage('decryptAmbiguousChars') ?? DEFAULT_AMBIGUOUS_CHARS);
   const [qrScanOpen, setQrScanOpen] = useState(false);
   const [pgpCameraOpen, setPgpCameraOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -73,6 +90,11 @@ export function DecryptAssist() {
 
   const normalizedText = useMemo(() => normalizeOcrArmored(rawText, ARMOR_WRAP_COLUMNS), [rawText]);
   const expected = useMemo(() => parseExpectedChecksums(expectedText), [expectedText]);
+  const ambiguousCharsNormalized = useMemo(() => ambiguousChars.replace(/\s+/g, ''), [ambiguousChars]);
+
+  useEffect(() => {
+    safeSetLocalStorage('decryptAmbiguousChars', ambiguousCharsNormalized);
+  }, [ambiguousCharsNormalized]);
 
   const [computedState, setComputedState] = useState<{
     text: string;
@@ -434,19 +456,43 @@ export function DecryptAssist() {
           {error && <Badge variant="destructive">{error}</Badge>}
         </div>
 
-        <div className="space-y-2">
-          <div className="text-sm font-semibold text-foreground">プレビュー（緑: OK / 黄: 誤読しやすい / 赤: チェックサム不一致）</div>
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
-            <div className="min-w-0 flex-1">
-              <HighlightedArmoredText
-                text={computedState?.text ?? normalizedText}
-                blocks={computedState?.checksums ?? []}
-                mismatchIndices={computedState?.mismatchIndices ?? new Set<number>()}
+	        <div className="space-y-2">
+	          <div className="text-sm font-semibold text-foreground">プレビュー（緑: OK / 黄: 誤読しやすい / 赤: チェックサム不一致）</div>
+            <div className="rounded-xl border bg-card px-4 py-3 space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="text-xs font-semibold text-foreground">黄ハイライト対象（誤読しやすい文字）</div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setAmbiguousChars(DEFAULT_AMBIGUOUS_CHARS)}
+                    disabled={ambiguousCharsNormalized === DEFAULT_AMBIGUOUS_CHARS}
+                  >
+                    既定に戻す
+                  </Button>
+                </div>
+              </div>
+              <Input
+                value={ambiguousChars}
+                onChange={(e) => setAmbiguousChars(e.target.value)}
+                className="font-mono"
+                placeholder={DEFAULT_AMBIGUOUS_CHARS}
               />
+              <div className="text-xs text-muted-foreground">例: {DEFAULT_AMBIGUOUS_CHARS}（空白は無視します）</div>
             </div>
-            <div className="w-full lg:w-[260px] shrink-0">
-              <div className="rounded-xl border bg-white p-3 space-y-2">
-                <div className="text-xs font-semibold text-foreground">ブロック別チェックサム</div>
+	          <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
+	            <div className="min-w-0 flex-1">
+	              <HighlightedArmoredText
+	                text={computedState?.text ?? normalizedText}
+	                blocks={computedState?.checksums ?? []}
+	                mismatchIndices={computedState?.mismatchIndices ?? new Set<number>()}
+                  ambiguousChars={ambiguousCharsNormalized}
+	              />
+	            </div>
+	            <div className="w-full lg:w-[260px] shrink-0">
+	              <div className="rounded-xl border bg-white p-3 space-y-2">
+	                <div className="text-xs font-semibold text-foreground">ブロック別チェックサム</div>
                 <div className="text-xs text-muted-foreground">4ブロック=1行（はがきの分割に対応）</div>
                 {(() => {
                   const computed = computedState?.checksums ?? [];
