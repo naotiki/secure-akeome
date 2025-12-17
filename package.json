@@ -1,5 +1,5 @@
 {
-  "name": "temp-app",
+  "name": "secure-akeome",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -36,7 +36,6 @@
     "qrcode": "^1.5.4",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
-    "react-qr-reader": "3.0.0-beta-1",
     "satori": "^0.18.3",
     "tailwind-merge": "^3.4.0",
     "tesseract.js": "^7.0.0",
