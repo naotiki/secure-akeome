@@ -12,8 +12,9 @@ function App() {
   return (
     <div className={view === 'decrypt' ? 'container-shell container-shell-wide' : 'container-shell'}>
       <section className="hero-card">
-        <Badge className="kv-badge">E2EE年賀状 / MVP</Badge>
-        <h1 className="text-3xl md:text-4xl">E2EE年賀状</h1>
+        <h1 className="text-3xl md:text-4xl flex items-center gap-3">
+          <span className="rainbow-text">セキュアあけおめ</span>
+        </h1>
         <p className="text-base text-muted-foreground">公開鍵の管理と、宛先ごとの暗号化をブラウザだけで行います（秘密鍵は扱いません）。</p>
         <div className="flex flex-wrap items-center gap-2 pt-2">
           <Button variant={view === 'keys' ? 'default' : 'outline'} onClick={() => setView('keys')}>
