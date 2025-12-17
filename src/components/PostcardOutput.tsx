@@ -17,10 +17,33 @@ function downloadBlob(filename: string, blob: Blob) {
   URL.revokeObjectURL(url);
 }
 
+async function copyToClipboard(text: string) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.style.position = 'fixed';
+  textarea.style.opacity = '0';
+  document.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
+  document.execCommand('copy');
+  document.body.removeChild(textarea);
+}
+
 function openSvgInNewTab(svg: string) {
   const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml;charset=utf-8' }));
   window.open(url, '_blank', 'noopener,noreferrer');
   window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+function summarizePlaintext(plaintext: string, maxChars = 80) {
+  const firstLine = plaintext.replace(/\r\n/g, '\n').split('\n')[0] ?? '';
+  const trimmed = firstLine.trim();
+  if (!trimmed) return '（平文なし）';
+  return trimmed.length > maxChars ? `${trimmed.slice(0, maxChars)}…` : trimmed;
 }
 
 export function PostcardOutput() {
@@ -37,6 +60,7 @@ export function PostcardOutput() {
   const [error, setError] = useState<string | null>(null);
   const [previewScale, setPreviewScale] = useState(1.35);
   const [previewColumns, setPreviewColumns] = useState<1 | 2>(1);
+  const [showPlaintext, setShowPlaintext] = useState(false);
 
   const senderFingerprint = useMemo(() => {
     try {
@@ -139,7 +163,10 @@ export function PostcardOutput() {
                   <button
                     key={d.id}
                     type="button"
-                    onClick={() => setSelectedDraftId(d.id)}
+                    onClick={() => {
+                      setSelectedDraftId(d.id);
+                      setShowPlaintext(false);
+                    }}
                     className={[
                       'w-full text-left px-4 py-3 transition',
                       selectedDraftId === d.id ? 'bg-sky-50' : 'hover:bg-slate-50',
@@ -149,6 +176,7 @@ export function PostcardOutput() {
                       {contacts.find((c) => c.fingerprint === d.recipientFingerprint)?.label ?? d.recipientFingerprint}
                     </div>
                     <div className="font-mono text-xs text-sky-600 break-all">{d.recipientFingerprint}</div>
+                    <div className="text-xs text-muted-foreground pt-1">{summarizePlaintext(d.plaintext)}</div>
                     <div className="flex items-center justify-between pt-1">
                       <span className="text-xs text-muted-foreground">{new Date(d.createdAt).toLocaleString()}</span>
                       <Badge variant="secondary">{d.pages.length} pages</Badge>
@@ -178,6 +206,36 @@ export function PostcardOutput() {
           </div>
 
           <div className="space-y-3">
+            {selectedDraft ? (
+              <div className="rounded-2xl border bg-card px-4 py-3 space-y-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-sm font-semibold text-foreground">平文（ローカルのみ）</div>
+                  <div className="flex items-center gap-2">
+                    <Button type="button" size="sm" variant="outline" onClick={() => setShowPlaintext((v) => !v)}>
+                      {showPlaintext ? '隠す' : '表示'}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={!showPlaintext}
+                      onClick={() => copyToClipboard(selectedDraft.plaintext).then(() => setStatus('平文をコピーしました'))}
+                    >
+                      コピー
+                    </Button>
+                  </div>
+                </div>
+                <pre
+                  className={[
+                    'rounded-xl border bg-white px-3 py-2 text-xs font-mono whitespace-pre-wrap break-words',
+                    showPlaintext ? 'text-slate-900' : 'text-muted-foreground',
+                  ].join(' ')}
+                  style={{ maxHeight: 180, overflow: 'auto' }}
+                >
+                  {showPlaintext ? selectedDraft.plaintext || '（平文なし）' : '（非表示）'}
+                </pre>
+              </div>
+            ) : null}
             <div className="flex items-center justify-between gap-2">
               <div>
                 <div className="text-sm font-semibold text-foreground">プレビュー</div>

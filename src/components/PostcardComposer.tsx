@@ -45,6 +45,13 @@ function byLabelOrFingerprint(a: ContactKey, b: ContactKey) {
   return (a.label || a.fingerprint).localeCompare(b.label || b.fingerprint);
 }
 
+function summarizePlaintext(plaintext: string, maxChars = 80) {
+  const firstLine = plaintext.replace(/\r\n/g, '\n').split('\n')[0] ?? '';
+  const trimmed = firstLine.trim();
+  if (!trimmed) return '（平文なし）';
+  return trimmed.length > maxChars ? `${trimmed.slice(0, maxChars)}…` : trimmed;
+}
+
 export function PostcardComposer() {
   const { contacts, init } = useContactsStore();
   const draftsStoreInit = useDraftsStore((s) => s.init);
@@ -296,38 +303,54 @@ export function PostcardComposer() {
           ) : (
             <div className="rounded-2xl border bg-card divide-y">
               {savedDrafts.map((d) => (
-                <div key={d.id} className="px-4 py-3 flex flex-wrap items-center justify-between gap-2">
-                  <div className="space-y-0.5 min-w-[240px]">
-                    <div className="text-sm font-semibold text-foreground">
-                      {recipientLabelByFingerprint.get(d.recipientFingerprint) ?? d.recipientFingerprint}
+                <div key={d.id} className="px-4 py-3 space-y-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="space-y-0.5 min-w-[240px]">
+                      <div className="text-sm font-semibold text-foreground">
+                        {recipientLabelByFingerprint.get(d.recipientFingerprint) ?? d.recipientFingerprint}
+                      </div>
+                      <div className="font-mono text-xs text-sky-600 break-all">{d.recipientFingerprint}</div>
+                      <div className="text-xs text-muted-foreground pt-1">{summarizePlaintext(d.plaintext)}</div>
+                      <div className="text-xs text-muted-foreground">{new Date(d.createdAt).toLocaleString()}</div>
                     </div>
-                    <div className="font-mono text-xs text-sky-600 break-all">{d.recipientFingerprint}</div>
-                    <div className="text-xs text-muted-foreground">{new Date(d.createdAt).toLocaleString()}</div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge variant="secondary">{d.pages.length} pages</Badge>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => copyToClipboard(d.encryptedMessage).then(() => setStatus('暗号文をコピーしました'))}
+                      >
+                        コピー
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => downloadText(`message-${d.recipientFingerprint}.asc`, d.encryptedMessage)}
+                      >
+                        .asc
+                      </Button>
+                      <Button variant="outline" size="sm" onClick={() => removeDraft(d.id).then(() => setStatus('削除しました'))}>
+                        削除
+                      </Button>
+                    </div>
                   </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge variant="secondary">{d.pages.length} pages</Badge>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => copyToClipboard(d.encryptedMessage).then(() => setStatus('暗号文をコピーしました'))}
-                    >
-                      コピー
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => downloadText(`message-${d.recipientFingerprint}.asc`, d.encryptedMessage)}
-                    >
-                      .asc
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => removeDraft(d.id).then(() => setStatus('削除しました'))}
-                    >
-                      削除
-                    </Button>
-                  </div>
+
+                  <details className="rounded-xl border bg-background/30 px-3 py-2">
+                    <summary className="cursor-pointer text-sm text-foreground">平文（ローカルのみ）</summary>
+                    <div className="mt-2 flex flex-wrap items-center justify-end gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => copyToClipboard(d.plaintext).then(() => setStatus('平文をコピーしました'))}
+                      >
+                        平文コピー
+                      </Button>
+                    </div>
+                    <pre className="mt-2 whitespace-pre-wrap break-words text-xs text-muted-foreground font-mono">
+                      {d.plaintext || '（平文なし）'}
+                    </pre>
+                  </details>
                 </div>
               ))}
             </div>
