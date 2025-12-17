@@ -39,6 +39,22 @@ async function copyToClipboard(text: string) {
   document.body.removeChild(textarea);
 }
 
+function pickHeredocDelimiter(text: string) {
+  const base = 'SECURE_AKEOME_PGP_MESSAGE';
+  if (!text.includes(base)) return base;
+  for (let i = 1; i < 1000; i++) {
+    const next = `${base}_${i}`;
+    if (!text.includes(next)) return next;
+  }
+  return `${base}_${crypto.randomUUID().replace(/-/g, '').slice(0, 8)}`;
+}
+
+function makeGpgDecryptCommand(armored: string) {
+  const normalized = armored.replace(/\r\n/g, '\n').trimEnd();
+  const delimiter = pickHeredocDelimiter(normalized);
+  return [`cat <<'${delimiter}' | gpg --decrypt`, normalized, delimiter].join('\n');
+}
+
 export function DecryptAssist() {
   const [rawText, setRawText] = useState('');
   const [expectedText, setExpectedText] = useState('');
@@ -292,7 +308,8 @@ export function DecryptAssist() {
     await onPickSource(file);
   };
 
-  const gpgCommand = 'gpg --decrypt message.asc';
+  const decryptText = computedState?.text ?? normalizedText;
+  const gpgCommand = decryptText.trim() ? makeGpgDecryptCommand(decryptText) : '';
 
   return (
     <Card className="section-card border border-slate-200">
@@ -491,27 +508,35 @@ export function DecryptAssist() {
               ? 'チェックサムが全ブロック一致しました。外部gpgで復号してください。'
               : 'チェックサムが全ブロック一致するまで、赤い領域（ブロック）を中心に修正してください。'}
           </div>
-          <div className="rounded-lg border bg-white px-3 py-2 font-mono text-sm">{gpgCommand}</div>
+          <Textarea
+            className="font-mono text-xs"
+            readOnly
+            value={gpgCommand || 'PGPメッセージを入力すると、ここに復号コマンドが出ます。'}
+          />
           <div className="flex flex-wrap items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => copyToClipboard(gpgCommand).then(() => setStatus('コマンドをコピーしました'))}>
-              コピー
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => copyToClipboard(gpgCommand).then(() => setStatus('コマンドをコピーしました'))}
+              disabled={!gpgCommand.trim()}
+            >
+              コマンドコピー
             </Button>
             <Button
               variant="outline"
               size="sm"
               onClick={() => {
-                const text = computedState?.text ?? normalizedText;
-                if (text.trim()) downloadText('message.asc', text);
+                if (decryptText.trim()) downloadText('message.asc', decryptText);
               }}
-              disabled={!(computedState?.text ?? normalizedText).trim()}
+              disabled={!decryptText.trim()}
             >
               message.asc 保存
             </Button>
             <Button
               variant="outline"
               size="sm"
-              onClick={() => copyToClipboard((computedState?.text ?? normalizedText) || '').then(() => setStatus('暗号文をコピーしました'))}
-              disabled={!(computedState?.text ?? normalizedText).trim()}
+              onClick={() => copyToClipboard(decryptText || '').then(() => setStatus('暗号文をコピーしました'))}
+              disabled={!decryptText.trim()}
             >
               暗号文コピー
             </Button>
