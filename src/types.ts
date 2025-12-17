@@ -1,4 +1,4 @@
-export type ContactKeySource = 'import' | 'keyserver';
+export type ContactKeySource = 'import' | 'keyserver' | 'self';
 
 export type ContactKey = {
   fingerprint: string;

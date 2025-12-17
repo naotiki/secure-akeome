@@ -28,6 +28,7 @@ export function KeyServerSearch() {
   const add = useContactsStore((s) => s.add);
   const [serverUrl, setServerUrl] = useState(() => safeGetLocalStorage('keyServerURL') ?? DEFAULT_VKS);
   const [query, setQuery] = useState('');
+  const [asSelf, setAsSelf] = useState(false);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<ParsedPublicKey | null>(null);
   const [status, setStatus] = useState<string | null>(null);
@@ -73,17 +74,18 @@ export function KeyServerSearch() {
     setStatus(null);
     setError(null);
 
-    const label = result.userIDs[0]?.trim() || result.fingerprint;
+    const label = asSelf ? '自分' : result.userIDs[0]?.trim() || result.fingerprint;
     const contact: ContactKey = {
       fingerprint: result.fingerprint,
       label,
       armoredPublicKey: result.armored,
-      source: 'keyserver',
+      source: asSelf ? 'self' : 'keyserver',
       createdAt: new Date().toISOString(),
     };
 
     try {
       await add(contact);
+      if (asSelf) safeSetLocalStorage('senderFingerprint', result.fingerprint);
       setStatus('保存しました');
     } catch (err) {
       setError((err as Error).message ?? '保存に失敗しました');
@@ -100,6 +102,15 @@ export function KeyServerSearch() {
       </div>
 
       <form onSubmit={onSearch} className="space-y-3">
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={asSelf}
+            onChange={(e) => setAsSelf(e.target.checked)}
+            className="h-4 w-4 accent-sky-600"
+          />
+          <span className="text-foreground">自分の公開鍵として保存（差出人FPにもセット）</span>
+        </label>
         <div className="space-y-1.5">
           <label className="text-sm font-medium text-foreground" htmlFor="keyserver-url">
             KeyServer URL
@@ -167,4 +178,3 @@ export function KeyServerSearch() {
     </div>
   );
 }
-

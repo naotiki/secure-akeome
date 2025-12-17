@@ -163,7 +163,9 @@ export function PostcardComposer() {
                 onChange={(e) => setSenderFingerprint(e.target.value)}
                 placeholder="例: 0123... (40 hex)"
               />
-              <div className="text-xs text-muted-foreground">暗号化には使いません（テンプレ出力時に印字します）。</div>
+              <div className="text-xs text-muted-foreground">
+                暗号化には使いません（テンプレ出力時に印字します）。「公開鍵管理」から差出人FPにセットできます。
+              </div>
             </div>
 
             <div className="space-y-1.5">

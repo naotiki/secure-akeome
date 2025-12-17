@@ -11,6 +11,14 @@ function normalizeFingerprint(fp: string) {
   return fp.replace(/\s+/g, '').toUpperCase();
 }
 
+function safeSetLocalStorage(key: string, value: string) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // ignore
+  }
+}
+
 async function extractFingerprint(armored: string): Promise<string> {
   const key = await openpgp.readKey({ armoredKey: armored });
   const fp = key.getFingerprint();
@@ -20,6 +28,7 @@ async function extractFingerprint(armored: string): Promise<string> {
 export function KeyImportForm() {
   const [armoredText, setArmoredText] = useState('');
   const [label, setLabel] = useState('');
+  const [asSelf, setAsSelf] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const add = useContactsStore((s) => s.add);
@@ -38,15 +47,17 @@ export function KeyImportForm() {
       const fingerprint = await extractFingerprint(armoredText.trim());
       const contact: ContactKey = {
         fingerprint,
-        label: label.trim() || fingerprint,
+        label: label.trim() || (asSelf ? '自分' : fingerprint),
         armoredPublicKey: armoredText.trim(),
-        source: 'import',
+        source: asSelf ? 'self' : 'import',
         createdAt: new Date().toISOString(),
       };
       await add(contact);
+      if (asSelf) safeSetLocalStorage('senderFingerprint', fingerprint);
       setStatus('保存しました');
       setArmoredText('');
       setLabel('');
+      setAsSelf(false);
     } catch (err) {
       setError((err as Error).message ?? '取り込みに失敗しました');
     }
@@ -61,6 +72,15 @@ export function KeyImportForm() {
         </p>
       </div>
       <form onSubmit={onSubmit} className="space-y-3">
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={asSelf}
+            onChange={(e) => setAsSelf(e.target.checked)}
+            className="h-4 w-4 accent-sky-600"
+          />
+          <span className="text-foreground">自分の公開鍵として登録（差出人FPにもセット）</span>
+        </label>
         <div className="space-y-1.5">
           <label className="text-sm font-medium text-foreground" htmlFor="label">
             ラベル（任意）
