@@ -3,7 +3,6 @@ import { KeyManager } from './components/KeyManager';
 import { PostcardComposer } from './components/PostcardComposer';
 import { PostcardOutput } from './components/PostcardOutput';
 import { DecryptAssist } from './components/DecryptAssist';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 
 function App() {
